@@ -1,3 +1,6 @@
+-- Licensed to the public under the GNU General Public License v3.
+
+local m, s, o
 local vssr = "vssr"
 local uci = luci.model.uci.cursor()
 local server_table = {}
@@ -9,6 +12,13 @@ if nixio.fs.access("/etc/dnsmasq.ssr/gfw_list.conf") then
 gfwmode=1		
 end
 
+local uci = luci.model.uci.cursor()
+local server_count = 0
+uci:foreach("vssr", "servers", function(s)
+  server_count = server_count + 1
+end)
+
+local fs  = require "nixio.fs"
 local sys = require "luci.sys"
 
 if gfwmode==1 then 
@@ -36,8 +46,7 @@ end
 o.default=2
 o.rmempty = false
 
-o = s:option(DynamicList, "subscribe_url", translate("Subscribe URL"),
-	translate("Before subscribing please click below to delete all servers in the subscription"))
+o = s:option(DynamicList, "subscribe_url", translate("Subscribe URL"))
 o.rmempty = true
 
 o = s:option(Flag, "proxy", translate("Through proxy update"))
@@ -50,20 +59,30 @@ o.rawhtml = true
 o.template = "vssr/update_subscribe"
 
 
-
-o = s:option(Button,"delete",translate("Delete all severs"))
-o.inputstyle = "reset"
-
-
+o = s:option(Button,"update",translate("Update All Subscribe Severs"), "<font color='red'>" .. translate("No special needs, please click here to subscribe to update") .."</font>")
+o.inputstyle = "reload"
 o.write = function()
-    uci:delete_all("vssr", "servers", function(s) return true end)
-	uci:commit("vssr") 
-    luci.sys.call("uci commit vssr && /etc/init.d/vssr stop")
-
-    luci.http.redirect(luci.dispatcher.build_url("admin", "vpn", "vssr", "servers"))
- return
+  luci.sys.call("bash /usr/share/vssr/subscribe.sh >>/tmp/vssr.log 2>&1")
+  luci.http.redirect(luci.dispatcher.build_url("admin", "vpn", "vssr", "servers"))
 end
 
+
+o = s:option(Button,"delete",translate("Delete All Subscribe Severs"))
+o.inputstyle = "reset"
+o.description = string.format(translate("Server Count") ..  ": %d", server_count)
+o.write = function()
+uci:delete_all("vssr", "servers", function(s) 
+  if s["hashkey"] then
+    return true
+  else
+    return false
+  end
+end)
+uci:save("vssr")
+luci.sys.call("uci commit vssr && /etc/init.d/vssr stop")
+luci.http.redirect(luci.dispatcher.build_url("admin", "vpn", "vssr", "servers"))
+return
+end
 
 
 m:section(SimpleSection).template  = "vssr/status2"
